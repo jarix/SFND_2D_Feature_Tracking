@@ -40,6 +40,12 @@ int main(int argc, const char *argv[])
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
 
+    vector<int> vehicleKeypointsPerImage;  // store results for MP.7
+    vector<int> vehicleKeypointsMatches;  // store results for MP.8
+
+    string detectorType = "NOT SET"; 
+    string descriptorType = "NOT SET";
+
     /* MAIN LOOP OVER ALL IMAGES */
 
     for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex++)
@@ -59,11 +65,20 @@ int main(int argc, const char *argv[])
         //// STUDENT ASSIGNMENT
         //// TASK MP.1 -> replace the following code with ring buffer of size dataBufferSize
 
-        // push image into data frame buffer
         DataFrame frame;
         frame.cameraImg = imgGray;
-        dataBuffer.push_back(frame);
-
+        if (imgIndex < dataBufferSize) {
+            // fill in the buffer first upto size 
+            dataBuffer.push_back(frame);
+        } else {
+            // Shift elements down, then pop  and push to the end of the vector
+            for (int i = 0; i < dataBufferSize-1; i++) {
+                dataBuffer[i] = dataBuffer[i+1];
+            }
+            dataBuffer.pop_back();
+            dataBuffer.push_back(frame);
+        }
+        //cout << "Image index = " << imgIndex << ", dataBuffer size = " << dataBuffer.size() << endl;
         //// EOF STUDENT ASSIGNMENT
         cout << "#1 : LOAD IMAGE INTO BUFFER done" << endl;
 
@@ -71,7 +86,13 @@ int main(int argc, const char *argv[])
 
         // extract 2D keypoints from current image
         vector<cv::KeyPoint> keypoints; // create empty feature list for current image
-        string detectorType = "SHITOMASI";
+        detectorType = "SHITOMASI";
+        //detectorType = "HARRIS";
+        //detectorType = "FAST";
+        //detectorType = "BRISK";
+        //detectorType = "ORB";
+        //detectorType = "AKAZE";
+        //detectorType = "SIFT";
 
         //// STUDENT ASSIGNMENT
         //// TASK MP.2 -> add the following keypoint detectors in file matching2D.cpp and enable string-based selection based on detectorType
@@ -81,9 +102,13 @@ int main(int argc, const char *argv[])
         {
             detKeypointsShiTomasi(keypoints, imgGray, false);
         }
+        else if (detectorType.compare("HARRIS") == 0)
+        {
+            detKeypointsHarris(keypoints, imgGray, false);
+        }
         else
         {
-            //...
+            detKeypointsModern(keypoints, imgGray, detectorType, false);
         }
         //// EOF STUDENT ASSIGNMENT
 
@@ -95,13 +120,39 @@ int main(int argc, const char *argv[])
         cv::Rect vehicleRect(535, 180, 180, 150);
         if (bFocusOnVehicle)
         {
-            // ...
+            vector<cv::KeyPoint> vehicleKeypoints;
+            for (cv::KeyPoint kpt : keypoints) {
+                if ((kpt.pt.x >= vehicleRect.x) && (kpt.pt.x <= (vehicleRect.x + vehicleRect.width)) &&
+                    (kpt.pt.y >= vehicleRect.y) && (kpt.pt.y <= (vehicleRect.y + vehicleRect.height)) )
+                    {
+                        vehicleKeypoints.push_back(kpt);
+                    }
+            }
+
+            std::cout << "Found keypoints on vehice n = " << vehicleKeypoints.size() << std::endl;
+            keypoints = vehicleKeypoints;
+            vehicleKeypointsPerImage.push_back(vehicleKeypoints.size());
+
+            /*
+            // Visualize Results:
+            if (true)
+            {
+                cv::Mat visImage = imgGray.clone();
+                cv::drawKeypoints(img, keypoints, visImage, cv::Scalar::all(-1), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+                string windowName = detectorType + " Detector Results, Keypoints on Vehicle";
+                cv::namedWindow(windowName, 6);
+                cv::imshow(windowName, visImage);
+                cv::waitKey(0);
+            }
+            */
+
         }
 
         //// EOF STUDENT ASSIGNMENT
 
         // optional : limit number of keypoints (helpful for debugging and learning)
         bool bLimitKpts = false;
+        //bool bLimitKpts = true;
         if (bLimitKpts)
         {
             int maxKeypoints = 50;
@@ -125,7 +176,13 @@ int main(int argc, const char *argv[])
         //// -> BRIEF, ORB, FREAK, AKAZE, SIFT
 
         cv::Mat descriptors;
-        string descriptorType = "BRISK"; // BRIEF, ORB, FREAK, AKAZE, SIFT
+        descriptorType = "BRISK"; // BRIEF, ORB, FREAK, AKAZE, SIFT
+        //descriptorType = "BRIEF";
+        //descriptorType = "ORB"; 
+        //descriptorType = "FREAK"; 
+        //descriptorType = "AKAZE"; 
+        //descriptorType = "SIFT"; 
+
         descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType);
         //// EOF STUDENT ASSIGNMENT
 
@@ -141,8 +198,11 @@ int main(int argc, const char *argv[])
 
             vector<cv::DMatch> matches;
             string matcherType = "MAT_BF";        // MAT_BF, MAT_FLANN
+            //string matcherType = "MAT_FLANN";
             string descriptorType = "DES_BINARY"; // DES_BINARY, DES_HOG
-            string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
+            //string descriptorType = "DES_HOG";
+            //string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
+            string selectorType = "SEL_KNN";
 
             //// STUDENT ASSIGNMENT
             //// TASK MP.5 -> add FLANN matching in file matching2D.cpp
@@ -156,6 +216,8 @@ int main(int argc, const char *argv[])
 
             // store matches in current data frame
             (dataBuffer.end() - 1)->kptMatches = matches;
+            // store results for MP.8
+            vehicleKeypointsMatches.push_back(matches.size());
 
             cout << "#4 : MATCH KEYPOINT DESCRIPTORS done" << endl;
 
@@ -180,6 +242,20 @@ int main(int argc, const char *argv[])
         }
 
     } // eof loop over all images
+
+    // Display results for MP.7
+    std::cout << detectorType << " Detector: keypoints on vehicle: ";
+    for (int n : vehicleKeypointsPerImage) {
+        std::cout << n << " ";
+    }
+    std::cout << std::endl;
+
+    // Display results for MP.8
+    std::cout << detectorType << " - " << descriptorType << " matches: ";
+    for (int n : vehicleKeypointsMatches) {
+        std::cout << n << " ";
+    }
+    std::cout << std::endl;
 
     return 0;
 }
